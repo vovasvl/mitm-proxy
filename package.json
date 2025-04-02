@@ -1,7 +1,13 @@
 {
+  "name": "mitm-proxy",
+  "version": "1.0.0",
+  "description": "proxy",
+  "main": "index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "sudo node src/index.js"
   },
+  "author": "",
+  "license": "ISC",
   "dependencies": {
     "express": "^5.1.0"
   }

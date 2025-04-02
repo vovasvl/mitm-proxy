@@ -1,12 +1,34 @@
 const http = require('http');
 const express = require('express');
 const { URL } = require('url');
+const net = require('net');
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
 
 const app = express();
 app.use(express.json());
 
 let requests = [];
 let requestIdCounter = 1;
+
+const CERT_DIR = path.join(__dirname, 'certs');
+
+function generateCert(host) {
+    const certPath = path.join(CERT_DIR, `${host}.crt`);
+    const keyPath = path.join(__dirname, `ca.key`);
+
+    if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
+        console.log(`Generating certificate for ${host}`);
+        const lol = execSync(`bash gen_cert.sh ${host} ${Date.now()}`, { cwd: __dirname });
+    }
+
+    return {
+        cert: fs.readFileSync(certPath),
+        key: fs.readFileSync(keyPath),
+    };
+}
+
 
 const proxyServer = http.createServer((clientReq, clientRes) => {
     const parsedUrl = new URL(clientReq.url);
@@ -47,6 +69,48 @@ const proxyServer = http.createServer((clientReq, clientRes) => {
     clientReq.pipe(proxyReq, { end: true });
 });
 
+proxyServer.on('connect', (req, clientSocket) => {
+    const [host, port] = req.url.split(':');
+    if (!host) {
+        console.error('Invalid CONNECT request: missing host');
+        clientSocket.end();
+        return;
+    }
+
+    console.log(`Connecting to host: ${host}, port: ${port || 443}`);
+
+    let cert, key;
+    try {
+        const { cert: generatedCert, key: generatedKey } = generateCert(host);
+        cert = generatedCert;
+        key = generatedKey;
+    } catch (err) {
+        console.error('Error generating certificate:', err.message);
+        clientSocket.write('HTTP/1.0 500 Internal Server Error\r\n\r\n');
+        clientSocket.end();
+        return;
+    }
+
+    const serverSocket = net.connect(port || 443, host, () => {
+        console.log('Connection established with target server');
+
+        clientSocket.write('HTTP/1.0 200 Connection established\r\n\r\n');
+
+        serverSocket.pipe(clientSocket);
+        clientSocket.pipe(serverSocket);
+    });
+
+    serverSocket.on('error', (err) => {
+        console.error('Server socket error:', err.message);
+        clientSocket.write('HTTP/1.0 502 Bad Gateway\r\n\r\n');
+        clientSocket.end();
+    });
+
+    clientSocket.on('error', (err) => {
+        console.error('Client socket error:', err.message);
+        serverSocket.end();
+    });
+});
 proxyServer.listen(8080, () => {
     console.log('Proxy server is running on port 8080');
 });
