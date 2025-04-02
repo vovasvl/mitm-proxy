@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: my-proxy
+    container_name: my-proxy-container
+    ports:
+      - "8080:8080" 
+      - "8000:8000"  
+    restart: unless-stopped
